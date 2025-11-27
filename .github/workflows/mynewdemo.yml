@@ -131,7 +131,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Deploy to PROD S3 bucket
+      - name: Deploy to DEV S3 bucket
         run: |
-          echo "Deploying to PROD bucket: ${{ secrets.AWS_S3_PROD_BUCKET }}"
-          aws s3 sync dist/ s3://${{ secrets.AWS_S3_PROD_BUCKET }}/ --delete
+          echo "Deploying to DEV bucket: ${{ secrets.AWS_S3_DEV_BUCKET }}"
+          aws s3 sync dist/ s3://${{ secrets.AWS_S3_DEV_BUCKET }} --delete
