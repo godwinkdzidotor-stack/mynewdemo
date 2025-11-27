@@ -134,4 +134,4 @@ jobs:
       - name: Deploy to DEV S3 bucket
         run: |
           echo "Deploying to DEV bucket: ${{ secrets.AWS_S3_DEV_BUCKET }}"
-          aws s3 sync dist/ s3://${{ secrets.AWS_S3_DEV_BUCKET }} --delete
+          
