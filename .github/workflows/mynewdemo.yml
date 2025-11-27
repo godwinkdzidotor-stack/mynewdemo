@@ -2,35 +2,136 @@ name: ci-cd-pipeline
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
+      - develop
+      - 'feature/**'      # all feature branches
   pull_request:
-    branches: [ main ]
- # schedule:
- #   - cron: "*/5 * * * *"
-jobs:
+    branches:
+      - main
+      - develop
+  schedule:
+    - cron: "*/5 * * * *" # health check every 5 minutes (UTC)
 
-  build:
+# Global env (safe non-secret values only)
+env:
+  APP_NAME: "mynewdemo"
+
+jobs:
+  # ------------------------------
+  # 1) Lint & Tests (CI)
+  # ------------------------------
+  lint_test:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Build step
-        run: echo "Godwin, the build job is running successfully!"
-    
+      # Placeholder – replace with real linters/tests later
+      - name: Run lint & unit tests
+        run: |
+          echo "Running lint & tests for $APP_NAME..."
+          # TODO: replace with your real commands, e.g.:
+          # npm ci
+          # npm run lint
+          # npm test
+          echo "Lint & tests passed (placeholder)."
+
+  # ------------------------------
+  # 2) Build job (produces artifact)
+  # ------------------------------
+  build:
+    needs: lint_test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build step (placeholder)
+        run: |
+          echo "Building $APP_NAME..."
+          mkdir -p dist
+          echo "<h1>$APP_NAME build $(date -u)</h1>" > dist/index.html
+
       - name: Print timestamp
-        run: | 
-          echo "Current UTC time: $$(date -u)" 
+        run: |
+          echo "Current UTC time: $(date -u)"
 
       - name: List project files
         run: ls -la
 
-  deploy:
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-build
+          path: dist/
+
+  # ------------------------------
+  # 3) Deploy to DEV (develop branch)
+  # ------------------------------
+  deploy_dev:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop'
+    environment: dev     # you can create an Environment called 'dev' in GitHub
+
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-build
+          path: dist/
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy to DEV S3 bucket
+        run: |
+          echo "Deploying to DEV bucket: ${{ secrets.AWS_S3_DEV_BUCKET }}"
+          aws s3 sync dist/ s3://${{ secrets.AWS_S3_DEV_BUCKET }}/ --delete
+
+  # ------------------------------
+  # 4) Deploy to PROD (main branch)
+  # ------------------------------
+  deploy_prod:
     needs: build
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
+    environment: production   # create 'production' env; you can require approvals there
+
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
 
     steps:
-      - name: Deploy placeholder
-        run: echo "Pretend deployment to AWS successful and working as expected!"
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-build
+          path: dist/
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy to PROD S3 bucket
+        run: |
+          echo "Deploying to PROD bucket: ${{ secrets.AWS_S3_PROD_BUCKET }}"
+          aws s3 sync dist/ s3://${{ secrets.AWS_S3_PROD_BUCKET }}/ --delete
