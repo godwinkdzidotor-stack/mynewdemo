@@ -1,0 +1,252 @@
+############################################
+# Security Groups
+############################################
+
+# ALB SG – allow HTTP from internet
+resource "aws_security_group" "alb" {
+  name        = "${var.project_name}-dev-alb-sg"
+  description = "ALB security group"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = merge(local.common_tags, {
+    Name = "${var.project_name}-dev-alb-sg"
+  })
+}
+
+# ECS tasks SG – only ALB can reach tasks
+resource "aws_security_group" "ecs_tasks" {
+  name        = "${var.project_name}-dev-ecs-sg"
+  description = "ECS tasks security group"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    from_port       = var.container_port
+    to_port         = var.container_port
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = merge(local.common_tags, {
+    Name = "${var.project_name}-dev-ecs-sg"
+  })
+}
+
+############################################
+# Application Load Balancer
+############################################
+
+resource "aws_lb" "app" {
+  name               = "${var.project_name}-dev-alb"
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb.id]
+  subnets            = [aws_subnet.public_a.id, aws_subnet.public_b.id]
+
+  tags = merge(local.common_tags, {
+    Name = "${var.project_name}-dev-alb"
+  })
+}
+
+resource "aws_lb_target_group" "app" {
+  name        = "${var.project_name}-dev-tg"
+  port        = var.container_port
+  protocol    = "HTTP"
+  vpc_id      = aws_vpc.main.id
+  target_type = "ip"
+
+  health_check {
+    path                = "/"
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+    timeout             = 5
+    interval            = 30
+    matcher             = "200-399"
+  }
+
+  tags = merge(local.common_tags, {
+    Name = "${var.project_name}-dev-tg"
+  })
+}
+
+resource "aws_lb_listener" "http" {
+  load_balancer_arn = aws_lb.app.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.app.arn
+  }
+}
+
+############################################
+# ECR Repository
+############################################
+
+resource "aws_ecr_repository" "app" {
+  name = "${var.project_name}-dev-repo"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  tags = merge(local.common_tags, {
+    Name = "${var.project_name}-dev-ecr"
+  })
+}
+
+############################################
+# ECS Cluster
+############################################
+
+resource "aws_ecs_cluster" "main" {
+  name = "${var.project_name}-dev-cluster"
+
+  tags = merge(local.common_tags, {
+    Name = "${var.project_name}-dev-cluster"
+  })
+}
+
+############################################
+# IAM Roles for ECS Tasks
+############################################
+
+data "aws_iam_policy_document" "ecs_task_assume_role" {
+  statement {
+    effect = "Allow"
+
+    principals {
+      type        = "Service"
+      identifiers = ["ecs-tasks.amazonaws.com"]
+    }
+
+    actions = ["sts:AssumeRole"]
+  }
+}
+
+# Execution role – pull images from ECR, write logs
+resource "aws_iam_role" "ecs_task_execution" {
+  name               = "${var.project_name}-dev-ecs-exec-role"
+  assume_role_policy = data.aws_iam_policy_document.ecs_task_assume_role.json
+
+  tags = merge(local.common_tags, {
+    Name = "${var.project_name}-dev-ecs-exec-role"
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_task_execution" {
+  role       = aws_iam_role.ecs_task_execution.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+# Task role – for app AWS access (none for now, but ready)
+resource "aws_iam_role" "ecs_task" {
+  name               = "${var.project_name}-dev-ecs-task-role"
+  assume_role_policy = data.aws_iam_policy_document.ecs_task_assume_role.json
+
+  tags = merge(local.common_tags, {
+    Name = "${var.project_name}-dev-ecs-task-role"
+  })
+}
+
+############################################
+# CloudWatch Logs
+############################################
+
+resource "aws_cloudwatch_log_group" "app" {
+  name              = "/ecs/${var.project_name}-dev"
+  retention_in_days = 7
+
+  tags = local.common_tags
+}
+
+############################################
+# ECS Task Definition
+############################################
+
+resource "aws_ecs_task_definition" "app" {
+  family                   = "${var.project_name}-dev-task"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = "256"
+  memory                   = "512"
+  execution_role_arn       = aws_iam_role.ecs_task_execution.arn
+  task_role_arn            = aws_iam_role.ecs_task.arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "app"
+      # For now use a public image; we'll switch to ECR + GitHub Actions later
+      image     = "nginx:latest"
+      essential = true
+
+      portMappings = [
+        {
+          containerPort = var.container_port
+          protocol      = "tcp"
+        }
+      ]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.app.name
+          awslogs-region        = var.aws_region
+          awslogs-stream-prefix = "ecs"
+        }
+      }
+    }
+  ])
+}
+
+############################################
+# ECS Service
+############################################
+
+resource "aws_ecs_service" "app" {
+  name            = "${var.project_name}-dev-service"
+  cluster         = aws_ecs_cluster.main.id
+  task_definition = aws_ecs_task_definition.app.arn
+  desired_count   = var.desired_count
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets         = [aws_subnet.private_a.id, aws_subnet.private_b.id]
+    security_groups = [aws_security_group.ecs_tasks.id]
+    assign_public_ip = false
+  }
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.app.arn
+    container_name   = "app"
+    container_port   = var.container_port
+  }
+
+  depends_on = [
+    aws_lb_listener.http
+  ]
+
+  tags = merge(local.common_tags, {
+    Name = "${var.project_name}-dev-service"
+  })
+}

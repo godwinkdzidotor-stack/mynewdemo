@@ -1,0 +1,14 @@
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.backup
+
+# AWS CLI installer
+awscliv2.zip
+awscilw.zip
+
+# Ignore all ZIP files
+*.zip
+
+# Node
+node_modules/
