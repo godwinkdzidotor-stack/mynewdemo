@@ -1,0 +1,12 @@
+{
+  "name": "mynewdemo-app",
+  "version": "1.0.0",
+  "description": "Simple Node.js app running on ECS Fargate behind an ALB",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "node-fetch": "^3.0.0"
+  }
+}

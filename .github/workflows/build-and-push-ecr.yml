@@ -1,0 +1,59 @@
+name: Build and Push Docker Image to ECR
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: 874894318546
+  ECR_REPOSITORY: mynewdemo-dev-repo
+  IMAGE_NAME: mynewdemo-app
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Configure AWS credentials using the repo secrets
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Login to Amazon ECR
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Build the Docker image from /app
+      - name: Build Docker image
+        run: |
+          cd app
+          docker build -t $IMAGE_NAME .
+
+      # Tag the image with the ECR repo + commit SHA
+      - name: Tag image
+        run: |
+          IMAGE_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${GITHUB_SHA}
+          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
+          docker tag $IMAGE_NAME:latest $IMAGE_URI
+
+      # Push the image to ECR
+      - name: Push image to ECR
+        run: |
+          docker push $IMAGE_URI
+
+      # Just print the final image URI for logs
+      - name: Show image URI
+        run: echo "Pushed image: $IMAGE_URI"
