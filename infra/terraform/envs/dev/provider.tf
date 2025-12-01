@@ -10,12 +10,12 @@ terraform {
 
   # For now use local backend; later we can switch to S3 + DynamoDB
   backend "s3" {
-  bucket         = "mynewdemo-terraform-state-elyman"
-  key            = "dev/terraform.tfstate"
-  region         = "us-east-1"
-  dynamodb_table = "terraform-locks"
-  encrypt        = true
-}
+    bucket         = "mynewdemo-terraform-state-elyman"
+    key            = "dev/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "terraform-locks"
+    encrypt        = true
+  }
 
 
 }

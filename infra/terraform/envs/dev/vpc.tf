@@ -104,7 +104,7 @@ resource "aws_route_table_association" "public_b" {
 
 # NAT Gateway so private subnets can reach the internet (for ECS tasks, etc.)
 resource "aws_eip" "nat" {
-  domain = "vpc" 
+  domain = "vpc"
 
   tags = merge(local.common_tags, {
     Name = "${var.project_name}-dev-nat-eip"

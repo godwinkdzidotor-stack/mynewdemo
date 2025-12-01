@@ -100,22 +100,6 @@ resource "aws_lb_listener" "http" {
 }
 
 ############################################
-# ECR Repository
-############################################
-
-resource "aws_ecr_repository" "app" {
-  name = "${var.project_name}-dev-repo"
-
-  image_scanning_configuration {
-    scan_on_push = true
-  }
-
-  tags = merge(local.common_tags, {
-    Name = "${var.project_name}-dev-ecr"
-  })
-}
-
-############################################
 # ECS Cluster
 ############################################
 
@@ -195,7 +179,7 @@ resource "aws_ecs_task_definition" "app" {
 
   container_definitions = jsonencode([
     {
-      name      = "app"
+      name = "app"
       # For now use a public image; we'll switch to ECR + GitHub Actions later
       image     = "nginx:latest"
       essential = true
@@ -231,8 +215,8 @@ resource "aws_ecs_service" "app" {
   launch_type     = "FARGATE"
 
   network_configuration {
-    subnets         = [aws_subnet.private_a.id, aws_subnet.private_b.id]
-    security_groups = [aws_security_group.ecs_tasks.id]
+    subnets          = [aws_subnet.private_a.id, aws_subnet.private_b.id]
+    security_groups  = [aws_security_group.ecs_tasks.id]
     assign_public_ip = false
   }
 
