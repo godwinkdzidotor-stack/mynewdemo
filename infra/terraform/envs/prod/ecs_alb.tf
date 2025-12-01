@@ -3,7 +3,7 @@
 ############################################
 
 resource "aws_security_group" "alb" {
-  name        = "${local.project_name}-${local.env}-alb-sg"   # ✅ FIXED
+  name        = "${local.project_name}-${local.env}-alb-sg" # ✅ FIXED
   description = "ALB security group"
   vpc_id      = aws_vpc.main.id
 
@@ -179,7 +179,7 @@ resource "aws_ecs_task_definition" "app" {
 
   container_definitions = jsonencode([
     {
-      name      = "app"
+      name = "app"
       # ✅ uses the ECR data source
       image     = "${data.aws_ecr_repository.app.repository_url}:${local.env}-latest"
       essential = true

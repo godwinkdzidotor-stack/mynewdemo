@@ -1,6 +1,6 @@
 locals {
   project_name = var.project_name
-  env          = "dev"
+  env          = "staging"
 
   common_tags = {
     Project = local.project_name

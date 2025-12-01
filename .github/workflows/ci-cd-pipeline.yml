@@ -13,7 +13,7 @@ on:
 env:
   APP_NAME: "mynewdemo"
   AWS_REGION: "us-east-1"
-  # Your shared ECR repo (from terraform output)
+  # Shared ECR repo (from Terraform output)
   ECR_REPOSITORY: "784934815450.dkr.ecr.us-east-1.amazonaws.com/mynewdemo"
 
 jobs:
@@ -38,7 +38,7 @@ jobs:
           echo "Lint & tests passed (placeholder)."
 
   # ------------------------------
-  # 2) Build & Deploy to DEV (develop branch)
+  # 2) Build (and optionally deploy) to DEV (develop branch)
   # ------------------------------
   build_deploy_dev:
     runs-on: ubuntu-latest
@@ -73,22 +73,28 @@ jobs:
           docker tag $APP_NAME:latest $ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REPOSITORY:$IMAGE_TAG
 
-      - name: Force new deployment in ECS (dev)
-        run: |
-          echo "Triggering ECS deployment for $ECS_CLUSTER / $ECS_SERVICE ..."
-          aws ecs update-service \
-            --cluster $ECS_CLUSTER \
-            --service $ECS_SERVICE \
-            --force-new-deployment \
-            --region $AWS_REGION
+      # NOTE:
+      # The ECS dev cluster/service do not exist yet, so these steps are
+      # commented out to avoid ServiceNotFoundException.
+      # Once you create the dev ECS environment with Terraform, you can
+      # uncomment this block.
 
-      - name: Wait for ECS service to stabilize (dev)
-        run: |
-          aws ecs wait services-stable \
-            --cluster $ECS_CLUSTER \
-            --services $ECS_SERVICE \
-            --region $AWS_REGION
-          echo "DEV deployment complete."
+      # - name: Force new deployment in ECS (dev)
+      #   run: |
+      #     echo "Triggering ECS deployment for $ECS_CLUSTER / $ECS_SERVICE ..."
+      #     aws ecs update-service \
+      #       --cluster $ECS_CLUSTER \
+      #       --service $ECS_SERVICE \
+      #       --force-new-deployment \
+      #       --region $AWS_REGION
+      #
+      # - name: Wait for ECS service to stabilize (dev)
+      #   run: |
+      #     aws ecs wait services-stable \
+      #       --cluster $ECS_CLUSTER \
+      #       --services $ECS_SERVICE \
+      #       --region $AWS_REGION
+      #     echo "DEV deployment complete."
 
   # ------------------------------
   # 3) Build & Deploy to PROD (main branch)
