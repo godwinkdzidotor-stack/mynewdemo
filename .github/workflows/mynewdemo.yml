@@ -68,70 +68,7 @@ jobs:
           name: web-build
           path: dist/
 
-  # ------------------------------
-  # 3) Deploy to DEV (develop branch)
-  # ------------------------------
-  deploy_dev:
-    needs: build
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/develop'
-    environment: dev     # you can create an Environment called 'dev' in GitHub
-
-    env:
-      AWS_REGION: ${{ secrets.AWS_REGION }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: web-build
-          path: dist/
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Deploy to DEV S3 bucket
-        run: |
-          echo "Deploying to DEV bucket: ${{ secrets.AWS_S3_DEV_BUCKET }}"
-          aws s3 sync dist/ s3://${{ secrets.AWS_S3_DEV_BUCKET }}/ --delete
-
-  # ------------------------------
-  # 4) Deploy to PROD (main branch)
-  # ------------------------------
-  deploy_prod:
-    needs: build
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-    environment: production   # create 'production' env; you can require approvals there
-
-    env:
-      AWS_REGION: ${{ secrets.AWS_REGION }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: web-build
-          path: dist/
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Deploy to DEV S3 bucket
-        run: |
-          echo "Deploying to DEV bucket: ${{ secrets.AWS_S3_DEV_BUCKET }}"
-          
+  # NOTE:
+  # Previous S3 deploy jobs (deploy_dev / deploy_prod) were removed
+  # because deployment is now handled via Docker -> ECR -> ECS
+  # in .github/workflows/build-and-push-ecr.yml

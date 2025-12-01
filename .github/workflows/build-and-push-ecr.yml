@@ -1,29 +1,21 @@
-name: Build and Push Docker Image to ECR
+name: build-and-push-ecr
 
 on:
   push:
-    branches:
-      - main
-      - develop
-
-env:
-  AWS_REGION: us-east-1
-  AWS_ACCOUNT_ID: 874894318546
-  ECR_REPOSITORY: mynewdemo-dev-repo
-  IMAGE_NAME: mynewdemo-app
+    branches: [ "develop", "main" ]
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
 
-    permissions:
-      contents: read
+    env:
+      AWS_REGION: us-east-1
+      ECR_REPOSITORY: mynewdemo
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Configure AWS credentials using the repo secrets
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -31,29 +23,29 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # Login to Amazon ECR
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      # Build the Docker image from /app
-      - name: Build Docker image
+      - name: Build, tag, and push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
         run: |
-          cd app
-          docker build -t $IMAGE_NAME .
+          IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          LATEST_URI=$ECR_REGISTRY/$ECR_REPOSITORY:latest
 
-      # Tag the image with the ECR repo + commit SHA
-      - name: Tag image
-        run: |
-          IMAGE_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${GITHUB_SHA}
           echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
-          docker tag $IMAGE_NAME:latest $IMAGE_URI
+          echo "LATEST_URI=$LATEST_URI" >> $GITHUB_ENV
 
-      # Push the image to ECR
-      - name: Push image to ECR
+          echo "Building image: $IMAGE_URI and $LATEST_URI"
+          docker build -t "$IMAGE_URI" -t "$LATEST_URI" -f app/Dockerfile app
+
+          echo "Pushing images..."
+          docker push "$IMAGE_URI"
+          docker push "$LATEST_URI"
+
+      - name: Show image URIs
         run: |
-          docker push $IMAGE_URI
-
-      # Just print the final image URI for logs
-      - name: Show image URI
-        run: echo "Pushed image: $IMAGE_URI"
+          echo "Pushed image (SHA): $IMAGE_URI"
+          echo "Pushed image (latest): $LATEST_URI"

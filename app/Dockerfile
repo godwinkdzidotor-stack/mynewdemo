@@ -1,25 +1,18 @@
-# app/Dockerfile
-
-# Use official Node.js LTS image
+# Use an official Node.js runtime as a parent image
 FROM node:20-alpine
 
-# Set working directory inside container
+# Create app directory
 WORKDIR /usr/src/app
 
-# Copy package files first (better layer caching)
+# Install app dependencies
 COPY package*.json ./
-
-# Install dependencies
 RUN npm install --only=production
 
-# Copy the rest of the app source
+# Bundle app source
 COPY . .
 
-# The app listens on port 80 inside the container
-EXPOSE 80
+# Expose the app port
+EXPOSE 3000
 
-# Environment variable for app name (optional)
-ENV APP_NAME="mynewdemo"
-
-# Start the Node.js app
+# Start the app
 CMD ["npm", "start"]
