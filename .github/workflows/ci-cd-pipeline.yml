@@ -13,7 +13,7 @@ env:
 
 jobs:
   # ----------------------------------------------------
-  # 1) CI — Lint & Test
+  # 1) CI — Lint & Tests
   # ----------------------------------------------------
   lint_test:
     runs-on: ubuntu-latest
@@ -27,7 +27,7 @@ jobs:
           echo "Lint OK, Tests OK (placeholder)."
 
   # ----------------------------------------------------
-  # 2) CD — Deploy to ECS (auto-select env by branch)
+  # 2) CD — Deploy to ECS
   # ----------------------------------------------------
   deploy:
     needs: lint_test
@@ -45,41 +45,43 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       # --------------------------
-      # ENV SELECTION
+      # SELECT ENV
       # --------------------------
-      - name: Set deployment environment
+      - name: Select environment
         id: envselect
         run: |
-          if [[ "${GITHUB_REF##*/}" == "develop" ]]; then
-              echo "env=dev" >> $GITHUB_OUTPUT
-          elif [[ "${GITHUB_REF##*/}" == "staging" ]]; then
-              echo "env=staging" >> $GITHUB_OUTPUT
-          elif [[ "${GITHUB_REF##*/}" == "main" ]]; then
-              echo "env=prod" >> $GITHUB_OUTPUT
+          BRANCH="${GITHUB_REF##*/}"
+
+          if [[ "$BRANCH" == "develop" ]]; then
+            echo "env=dev" >> $GITHUB_OUTPUT
+            echo "cluster=mynewdemo-dev-cluster" >> $GITHUB_OUTPUT
+            echo "service=mynewdemo-dev-service" >> $GITHUB_OUTPUT
+
+          elif [[ "$BRANCH" == "staging" ]]; then
+            echo "env=staging" >> $GITHUB_OUTPUT
+            echo "cluster=mynewdemo-staging-cluster" >> $GITHUB_OUTPUT
+            echo "service=mynewdemo-staging-service" >> $GITHUB_OUTPUT
+
+          elif [[ "$BRANCH" == "main" ]]; then
+            echo "env=prod" >> $GITHUB_OUTPUT
+            echo "cluster=mynewdemo-prod-cluster" >> $GITHUB_OUTPUT
+            echo "service=mynewdemo-prod-service" >> $GITHUB_OUTPUT
+
           else
-              echo "Unknown branch. Exiting!"
-              exit 1
+            echo "Invalid branch for deployment"
+            exit 1
           fi
 
       # --------------------------
-      # DEPLOY ECS
+      # ECS Deployment
       # --------------------------
       - name: Deploy to ECS
         run: |
-          ENV="${{ steps.envselect.outputs.env }}"
-          echo "Deploying to environment: $ENV"
-          
-          # Task definitions pattern
-          FAMILY="${APP_NAME}-${ENV}"
-          CLUSTER="${APP_NAME}-${ENV}-cluster"
-          SERVICE="${APP_NAME}-${ENV}-service"
-
-          echo "Cluster: $CLUSTER"
-          echo "Service: $SERVICE"
-          echo "Family:  $FAMILY"
+          echo "Environment: ${{ steps.envselect.outputs.env }}"
+          echo "Cluster:     ${{ steps.envselect.outputs.cluster }}"
+          echo "Service:     ${{ steps.envselect.outputs.service }}"
 
           aws ecs update-service \
-              --cluster $CLUSTER \
-              --service $SERVICE \
-              --force-new-deployment
-
+            --cluster ${{ steps.envselect.outputs.cluster }} \
+            --service ${{ steps.envselect.outputs.service }} \
+            --force-new-deployment
