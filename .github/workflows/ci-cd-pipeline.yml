@@ -3,32 +3,38 @@ name: ci-cd-pipeline
 on:
   push:
     branches:
+      - develop      # → dev
+      - staging      # → staging
+      - main         # → prod
+  pull_request:
+    branches:
       - develop
       - staging
       - main
 
 env:
-  AWS_REGION: "us-east-1"
   APP_NAME: "mynewdemo"
+  AWS_REGION: "us-east-1"
 
 jobs:
-  # ----------------------------------------------------
-  # 1) CI — Lint & Tests
-  # ----------------------------------------------------
+  # ------------------------------------------------
+  # 1) CI: Lint & Test
+  # ------------------------------------------------
   lint_test:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Run lint + tests
+      - name: Run lint & tests (placeholder)
         run: |
-          echo "Running lint/test for $APP_NAME ..."
-          echo "Lint OK, Tests OK (placeholder)."
+          echo "Running lint & tests for $APP_NAME ..."
+          echo "Lint OK, tests OK (placeholder)."
 
-  # ----------------------------------------------------
-  # 2) CD — Deploy to ECS
-  # ----------------------------------------------------
+  # ------------------------------------------------
+  # 2) CD: Deploy to ECS (dev / staging / prod)
+  # ------------------------------------------------
   deploy:
     needs: lint_test
     runs-on: ubuntu-latest
@@ -37,20 +43,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure AWS
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # --------------------------
-      # SELECT ENV
-      # --------------------------
-      - name: Select environment
+      # Decide which environment / cluster / service to target
+      - name: Select environment based on branch
         id: envselect
         run: |
           BRANCH="${GITHUB_REF##*/}"
+          echo "Branch is: $BRANCH"
 
           if [[ "$BRANCH" == "develop" ]]; then
             echo "env=dev" >> $GITHUB_OUTPUT
@@ -68,20 +73,21 @@ jobs:
             echo "service=mynewdemo-prod-service" >> $GITHUB_OUTPUT
 
           else
-            echo "Invalid branch for deployment"
+            echo "Unsupported branch for deployment: $BRANCH"
             exit 1
           fi
 
-      # --------------------------
-      # ECS Deployment
-      # --------------------------
       - name: Deploy to ECS
         run: |
-          echo "Environment: ${{ steps.envselect.outputs.env }}"
-          echo "Cluster:     ${{ steps.envselect.outputs.cluster }}"
-          echo "Service:     ${{ steps.envselect.outputs.service }}"
+          ENVIRONMENT="${{ steps.envselect.outputs.env }}"
+          CLUSTER="${{ steps.envselect.outputs.cluster }}"
+          SERVICE="${{ steps.envselect.outputs.service }}"
+
+          echo "Environment : $ENVIRONMENT"
+          echo "Cluster     : $CLUSTER"
+          echo "Service     : $SERVICE"
 
           aws ecs update-service \
-            --cluster ${{ steps.envselect.outputs.cluster }} \
-            --service ${{ steps.envselect.outputs.service }} \
+            --cluster "$CLUSTER" \
+            --service "$SERVICE" \
             --force-new-deployment
