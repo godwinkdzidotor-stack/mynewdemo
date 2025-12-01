@@ -3,196 +3,83 @@ name: ci-cd-pipeline
 on:
   push:
     branches:
-      - main
       - develop
       - staging
-  pull_request:
-    branches:
       - main
-      - develop
-      - staging
 
 env:
-  APP_NAME: "mynewdemo"
   AWS_REGION: "us-east-1"
-  # Shared ECR repo (from Terraform output)
-  ECR_REPOSITORY: "784934815450.dkr.ecr.us-east-1.amazonaws.com/mynewdemo"
+  APP_NAME: "mynewdemo"
 
 jobs:
-  # ------------------------------
-  # 1) Lint & Tests (CI)
-  # ------------------------------
+  # ----------------------------------------------------
+  # 1) CI — Lint & Test
+  # ----------------------------------------------------
   lint_test:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Run lint & unit tests
+      - name: Run lint + tests
         run: |
-          echo "Running lint & tests for $APP_NAME..."
-          # TODO: real commands:
-          # npm ci
-          # npm run lint
-          # npm test
-          echo "Lint & tests passed (placeholder)."
+          echo "Running lint/test for $APP_NAME ..."
+          echo "Lint OK, Tests OK (placeholder)."
 
-  # ------------------------------
-  # 2) Build & Deploy to DEV (develop branch)
-  # ------------------------------
-  build_deploy_dev:
-    runs-on: ubuntu-latest
+  # ----------------------------------------------------
+  # 2) CD — Deploy to ECS (auto-select env by branch)
+  # ----------------------------------------------------
+  deploy:
     needs: lint_test
-    if: github.ref == 'refs/heads/develop'
-
-    env:
-      ENV_NAME: "dev"
-      IMAGE_TAG: "dev-latest"
-      ECS_CLUSTER: "mynewdemo-dev-cluster"
-      ECS_SERVICE: "mynewdemo-dev-service"
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
+      - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build, tag, and push image to ECR (dev)
+      # --------------------------
+      # ENV SELECTION
+      # --------------------------
+      - name: Set deployment environment
+        id: envselect
         run: |
-          echo "Building Docker image for $APP_NAME ($ENV_NAME)..."
-          docker build -t $APP_NAME -f ./app/Dockerfile ./app
-          docker tag $APP_NAME:latest $ECR_REPOSITORY:$IMAGE_TAG
-          docker push $ECR_REPOSITORY:$IMAGE_TAG
+          if [[ "${GITHUB_REF##*/}" == "develop" ]]; then
+              echo "env=dev" >> $GITHUB_OUTPUT
+          elif [[ "${GITHUB_REF##*/}" == "staging" ]]; then
+              echo "env=staging" >> $GITHUB_OUTPUT
+          elif [[ "${GITHUB_REF##*/}" == "main" ]]; then
+              echo "env=prod" >> $GITHUB_OUTPUT
+          else
+              echo "Unknown branch. Exiting!"
+              exit 1
+          fi
 
-      - name: Force new deployment in ECS (dev)
+      # --------------------------
+      # DEPLOY ECS
+      # --------------------------
+      - name: Deploy to ECS
         run: |
-          echo "Triggering ECS deployment for $ECS_CLUSTER / $ECS_SERVICE ..."
+          ENV="${{ steps.envselect.outputs.env }}"
+          echo "Deploying to environment: $ENV"
+          
+          # Task definitions pattern
+          FAMILY="${APP_NAME}-${ENV}"
+          CLUSTER="${APP_NAME}-${ENV}-cluster"
+          SERVICE="${APP_NAME}-${ENV}-service"
+
+          echo "Cluster: $CLUSTER"
+          echo "Service: $SERVICE"
+          echo "Family:  $FAMILY"
+
           aws ecs update-service \
-            --cluster $ECS_CLUSTER \
-            --service $ECS_SERVICE \
-            --force-new-deployment \
-            --region $AWS_REGION
+              --cluster $CLUSTER \
+              --service $SERVICE \
+              --force-new-deployment
 
-      - name: Wait for ECS service to stabilize (dev)
-        run: |
-          aws ecs wait services-stable \
-            --cluster $ECS_CLUSTER \
-            --services $ECS_SERVICE \
-            --region $AWS_REGION
-          echo "DEV deployment complete."
-
-  # ------------------------------
-  # 3) Build & Deploy to STAGING (staging branch)
-  # ------------------------------
-  build_deploy_staging:
-    runs-on: ubuntu-latest
-    needs: lint_test
-    if: github.ref == 'refs/heads/staging'
-
-    env:
-      ENV_NAME: "staging"
-      IMAGE_TAG: "staging-latest"
-      ECS_CLUSTER: "mynewdemo-staging-cluster"
-      ECS_SERVICE: "mynewdemo-staging-service"
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build, tag, and push image to ECR (staging)
-        run: |
-          echo "Building Docker image for $APP_NAME ($ENV_NAME)..."
-          docker build -t $APP_NAME -f ./app/Dockerfile ./app
-          docker tag $APP_NAME:latest $ECR_REPOSITORY:$IMAGE_TAG
-          docker push $ECR_REPOSITORY:$IMAGE_TAG
-
-      - name: Force new deployment in ECS (staging)
-        run: |
-          echo "Triggering ECS deployment for $ECS_CLUSTER / $ECS_SERVICE ..."
-          aws ecs update-service \
-            --cluster $ECS_CLUSTER \
-            --service $ECS_SERVICE \
-            --force-new-deployment \
-            --region $AWS_REGION
-
-      - name: Wait for ECS service to stabilize (staging)
-        run: |
-          aws ecs wait services-stable \
-            --cluster $ECS_CLUSTER \
-            --services $ECS_SERVICE \
-            --region $AWS_REGION
-          echo "STAGING deployment complete."
-
-  # ------------------------------
-  # 4) Build & Deploy to PROD (main branch)
-  # ------------------------------
-  build_deploy_prod:
-    runs-on: ubuntu-latest
-    needs: lint_test
-    if: github.ref == 'refs/heads/main'
-
-    env:
-      ENV_NAME: "prod"
-      IMAGE_TAG: "prod-latest"
-      ECS_CLUSTER: "mynewdemo-prod-cluster"
-      ECS_SERVICE: "mynewdemo-prod-service"
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build, tag, and push image to ECR (prod)
-        run: |
-          echo "Building Docker image for $APP_NAME ($ENV_NAME)..."
-          docker build -t $APP_NAME -f ./app/Dockerfile ./app
-          docker tag $APP_NAME:latest $ECR_REPOSITORY:$IMAGE_TAG
-          docker push $ECR_REPOSITORY:$IMAGE_TAG
-
-      - name: Force new deployment in ECS (prod)
-        run: |
-          echo "Triggering ECS deployment for $ECS_CLUSTER / $ECS_SERVICE ..."
-          aws ecs update-service \
-            --cluster $ECS_CLUSTER \
-            --service $ECS_SERVICE \
-            --force-new-deployment \
-            --region $AWS_REGION
-
-      - name: Wait for ECS service to stabilize (prod)
-        run: |
-          aws ecs wait services-stable \
-            --cluster $ECS_CLUSTER \
-            --services $ECS_SERVICE \
-            --region $AWS_REGION
-          echo "PROD deployment complete."
