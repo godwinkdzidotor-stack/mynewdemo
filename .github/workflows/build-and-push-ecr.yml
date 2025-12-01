@@ -2,18 +2,28 @@ name: build-and-push-ecr
 
 on:
   push:
-    branches: [ "develop", "main" ]
+    branches:
+      - main
+      - staging
+      - develop
+    paths:
+      - "app/**"
+      - ".github/workflows/build-and-push-ecr.yml"
+      - "Dockerfile"
+  workflow_dispatch:
+
+env:
+  APP_NAME: "mynewdemo"
+  AWS_REGION: "us-east-1"
+  # Your shared ECR repo
+  ECR_REPOSITORY: "784934815450.dkr.ecr.us-east-1.amazonaws.com/mynewdemo"
 
 jobs:
-  build-and-push:
+  build_and_push:
     runs-on: ubuntu-latest
 
-    env:
-      AWS_REGION: us-east-1
-      ECR_REPOSITORY: mynewdemo
-
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Configure AWS credentials
@@ -27,25 +37,17 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build, tag, and push Docker image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
+      - name: Build and push Docker image
         run: |
-          IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          LATEST_URI=$ECR_REGISTRY/$ECR_REPOSITORY:latest
+          IMAGE_URI=${{ env.ECR_REPOSITORY }}
 
-          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
-          echo "LATEST_URI=$LATEST_URI" >> $GITHUB_ENV
+          echo "Building image: $IMAGE_URI"
 
-          echo "Building image: $IMAGE_URI and $LATEST_URI"
-          docker build -t "$IMAGE_URI" -t "$LATEST_URI" -f app/Dockerfile app
+          # build from ./app as context
+          docker build \
+            -t $IMAGE_URI:latest \
+            -t $IMAGE_URI:${{ github.sha }} \
+            ./app
 
-          echo "Pushing images..."
-          docker push "$IMAGE_URI"
-          docker push "$LATEST_URI"
-
-      - name: Show image URIs
-        run: |
-          echo "Pushed image (SHA): $IMAGE_URI"
-          echo "Pushed image (latest): $LATEST_URI"
+          docker push $IMAGE_URI:latest
+          docker push $IMAGE_URI:${{ github.sha }}
