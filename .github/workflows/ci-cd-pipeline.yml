@@ -16,6 +16,9 @@ env:
   APP_NAME: "mynewdemo"
   AWS_REGION: "us-east-1"
 
+# --------------------------
+# 1) Lint & Tests
+# --------------------------
 jobs:
   # ------------------------------------------------
   # 1) CI: Lint & Test
@@ -28,7 +31,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run lint & tests (placeholder)
+      - name: Run lint & tests (placeholder)
         run: |
+          echo "Running lint & tests for $APP_NAME ..."
+          echo "Lint OK, tests OK (placeholder)."
           echo "Running lint & tests for $APP_NAME ..."
           echo "Lint OK, tests OK (placeholder)."
 
@@ -40,6 +46,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -88,6 +95,9 @@ jobs:
           echo "Service     : $SERVICE"
 
           aws ecs update-service \
+            --cluster "$CLUSTER" \
+            --service "$SERVICE" \
+            --force-new-deployment
             --cluster "$CLUSTER" \
             --service "$SERVICE" \
             --force-new-deployment
