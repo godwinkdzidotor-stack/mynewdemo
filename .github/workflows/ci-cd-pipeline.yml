@@ -15,6 +15,8 @@ on:
 env:
   APP_NAME: "mynewdemo"
   AWS_REGION: "us-east-1"
+  # Shared ECR repo (from Terraform output)
+  ECR_REPOSITORY: "784934815450.dkr.ecr.us-east-1.amazonaws.com/mynewdemo"
 
 # --------------------------
 # 1) Lint & Tests
@@ -62,7 +64,11 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Deploy to ECS DEV
+      - name: Login to Amazon ECR
+        id: login-ecr-dev
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image to ECR (dev)
         run: |
           echo "Building Docker image for $APP_NAME ($ENV_NAME)..."
           docker build -t $APP_NAME -f ./app/Dockerfile ./app
@@ -116,7 +122,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
-        id: login-ecr
+        id: login-ecr-staging
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build, tag, and push image to ECR (staging)
@@ -155,6 +161,12 @@ jobs:
     environment:
       name: prod
 
+    env:
+      ENV_NAME: "prod"
+      IMAGE_TAG: "prod-latest"
+      ECS_CLUSTER: "mynewdemo-prod-cluster"
+      ECS_SERVICE: "mynewdemo-prod-service"
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -166,16 +178,30 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Login to Amazon ECR
+        id: login-ecr-prod
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image to ECR (prod)
+        run: |
+          echo "Building Docker image for $APP_NAME ($ENV_NAME)..."
+          docker build -t $APP_NAME -f ./app/Dockerfile ./app
+          docker tag $APP_NAME:latest $ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REPOSITORY:$IMAGE_TAG
+
       - name: Deploy to ECS PROD
         run: |
-          CLUSTER="mynewdemo-prod-cluster"
-          SERVICE="mynewdemo-prod-service"
-
-          echo "Deploying to PROD:"
-          echo "Cluster: $CLUSTER"
-          echo "Service: $SERVICE"
-
+          echo "Triggering ECS deployment for $ECS_CLUSTER / $ECS_SERVICE ..."
           aws ecs update-service \
-            --cluster "$CLUSTER" \
-            --service "$SERVICE" \
-            --force-new-deployment
+            --cluster "$ECS_CLUSTER" \
+            --service "$ECS_SERVICE" \
+            --force-new-deployment \
+            --region "$AWS_REGION"
+
+      - name: Wait for ECS service to stabilize (prod)
+        run: |
+          aws ecs wait services-stable \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE" \
+            --region "$AWS_REGION"
+          echo "PROD deployment complete."
