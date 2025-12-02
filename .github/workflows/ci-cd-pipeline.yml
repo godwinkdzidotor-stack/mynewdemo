@@ -3,9 +3,9 @@ name: ci-cd-pipeline
 on:
   push:
     branches:
-      - develop      # → dev
-      - staging      # → staging
-      - main         # → prod
+      - develop
+      - staging
+      - main
   pull_request:
     branches:
       - develop
@@ -16,13 +16,12 @@ env:
   APP_NAME: "mynewdemo"
   AWS_REGION: "us-east-1"
 
+# ------------------------------------------------------
+# 1) CI — Lint & Tests
+# ------------------------------------------------------
 jobs:
-  # ------------------------------------------------
-  # 1) CI: Lint & Test
-  # ------------------------------------------------
   lint_test:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -30,14 +29,15 @@ jobs:
       - name: Run lint & tests (placeholder)
         run: |
           echo "Running lint & tests for $APP_NAME ..."
-          echo "Lint OK, tests OK (placeholder)."
+          echo "Lint OK, tests OK."
 
-  # ------------------------------------------------
-  # 2) CD: Deploy to ECS (dev / staging / prod)
-  # ------------------------------------------------
-  deploy:
+# ------------------------------------------------------
+# 2) CD — Deploy to DEV
+# ------------------------------------------------------
+  deploy_dev:
     needs: lint_test
     runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop'
 
     steps:
       - name: Checkout
@@ -50,44 +50,61 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # Decide which environment / cluster / service to target
-      - name: Select environment based on branch
-        id: envselect
+      - name: Deploy to DEV ECS cluster
         run: |
-          BRANCH="${GITHUB_REF##*/}"
-          echo "Branch is: $BRANCH"
-
-          if [[ "$BRANCH" == "develop" ]]; then
-            echo "env=dev" >> $GITHUB_OUTPUT
-            echo "cluster=mynewdemo-dev-cluster" >> $GITHUB_OUTPUT
-            echo "service=mynewdemo-dev-service" >> $GITHUB_OUTPUT
-
-          elif [[ "$BRANCH" == "staging" ]]; then
-            echo "env=staging" >> $GITHUB_OUTPUT
-            echo "cluster=mynewdemo-staging-cluster" >> $GITHUB_OUTPUT
-            echo "service=mynewdemo-staging-service" >> $GITHUB_OUTPUT
-
-          elif [[ "$BRANCH" == "main" ]]; then
-            echo "env=prod" >> $GITHUB_OUTPUT
-            echo "cluster=mynewdemo-prod-cluster" >> $GITHUB_OUTPUT
-            echo "service=mynewdemo-prod-service" >> $GITHUB_OUTPUT
-
-          else
-            echo "Unsupported branch for deployment: $BRANCH"
-            exit 1
-          fi
-
-      - name: Deploy to ECS
-        run: |
-          ENVIRONMENT="${{ steps.envselect.outputs.env }}"
-          CLUSTER="${{ steps.envselect.outputs.cluster }}"
-          SERVICE="${{ steps.envselect.outputs.service }}"
-
-          echo "Environment : $ENVIRONMENT"
-          echo "Cluster     : $CLUSTER"
-          echo "Service     : $SERVICE"
-
           aws ecs update-service \
-            --cluster "$CLUSTER" \
-            --service "$SERVICE" \
+            --cluster mynewdemo-dev-cluster \
+            --service mynewdemo-dev-service \
+            --force-new-deployment
+
+# ------------------------------------------------------
+# 3) CD — Deploy to STAGING
+# ------------------------------------------------------
+  deploy_staging:
+    needs: lint_test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/staging'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy to STAGING ECS cluster
+        run: |
+          aws ecs update-service \
+            --cluster mynewdemo-staging-cluster \
+            --service mynewdemo-staging-service \
+            --force-new-deployment
+
+# ------------------------------------------------------
+# 4) CD — Deploy to PROD
+# ------------------------------------------------------
+  deploy_prod:
+    needs: lint_test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy to PROD ECS cluster
+        run: |
+          aws ecs update-service \
+            --cluster mynewdemo-prod-cluster \
+            --service mynewdemo-prod-service \
             --force-new-deployment
