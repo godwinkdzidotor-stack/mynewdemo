@@ -3,10 +3,14 @@ name: ci-cd-pipeline
 on:
   push:
     branches:
-      - develop   # Dev environment
-      - staging   # Staging environment
-      - main      # Prod environment
-  workflow_dispatch:
+      - main
+      - develop
+      - staging
+  pull_request:
+    branches:
+      - main
+      - develop
+      - staging
 
 env:
   APP_NAME: "mynewdemo"
@@ -28,15 +32,24 @@ jobs:
           echo "Running lint & tests for $APP_NAME ..."
           echo "Lint OK, tests OK (placeholder)."
 
-  # --------------------------
-  # 2) Deploy to DEV (develop)
-  # --------------------------
-  deploy_dev:
-    needs: lint_test
+  # ------------------------------
+  # 2) Build & Deploy to DEV
+  #    - runs on develop, staging, and main
+  #    - staging/main will chain through DEV first
+  # ------------------------------
+  build_deploy_dev:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/develop'
-    environment:
-      name: dev
+    needs: lint_test
+    if: |
+      github.ref == 'refs/heads/develop' ||
+      github.ref == 'refs/heads/staging' ||
+      github.ref == 'refs/heads/main'
+
+    env:
+      ENV_NAME: "dev"
+      IMAGE_TAG: "dev-latest"
+      ECS_CLUSTER: "mynewdemo-dev-cluster"
+      ECS_SERVICE: "mynewdemo-dev-service"
 
     steps:
       - name: Checkout
@@ -51,30 +64,48 @@ jobs:
 
       - name: Deploy to ECS DEV
         run: |
-          CLUSTER="mynewdemo-dev-cluster"
-          SERVICE="mynewdemo-dev-service"
+          echo "Building Docker image for $APP_NAME ($ENV_NAME)..."
+          docker build -t $APP_NAME -f ./app/Dockerfile ./app
+          docker tag $APP_NAME:latest $ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REPOSITORY:$IMAGE_TAG
 
-          echo "Deploying to DEV:"
-          echo "Cluster: $CLUSTER"
-          echo "Service: $SERVICE"
-
+      - name: Force new deployment in ECS (dev)
+        run: |
+          echo "Triggering ECS deployment for $ECS_CLUSTER / $ECS_SERVICE ..."
           aws ecs update-service \
-            --cluster "$CLUSTER" \
-            --service "$SERVICE" \
-            --force-new-deployment
+            --cluster $ECS_CLUSTER \
+            --service $ECS_SERVICE \
+            --force-new-deployment \
+            --region $AWS_REGION
 
-  # --------------------------
-  # 3) Deploy to STAGING (staging)
-  # --------------------------
-  deploy_staging:
-    needs: lint_test
+      - name: Wait for ECS service to stabilize (dev)
+        run: |
+          aws ecs wait services-stable \
+            --cluster $ECS_CLUSTER \
+            --services $ECS_SERVICE \
+            --region $AWS_REGION
+          echo "DEV deployment complete."
+
+  # ------------------------------
+  # 3) Build & Deploy to STAGING
+  #    - runs on staging and main
+  #    - depends on DEV job
+  # ------------------------------
+  build_deploy_staging:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/staging'
-    environment:
-      name: staging
+    needs: build_deploy_dev
+    if: |
+      github.ref == 'refs/heads/staging' ||
+      github.ref == 'refs/heads/main'
+
+    env:
+      ENV_NAME: "staging"
+      IMAGE_TAG: "staging-latest"
+      ECS_CLUSTER: "mynewdemo-staging-cluster"
+      ECS_SERVICE: "mynewdemo-staging-service"
 
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Configure AWS credentials
@@ -84,26 +115,42 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Deploy to ECS STAGING
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image to ECR (staging)
         run: |
-          CLUSTER="mynewdemo-staging-cluster"
-          SERVICE="mynewdemo-staging-service"
+          echo "Building Docker image for $APP_NAME ($ENV_NAME)..."
+          docker build -t $APP_NAME -f ./app/Dockerfile ./app
+          docker tag $APP_NAME:latest $ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REPOSITORY:$IMAGE_TAG
 
-          echo "Deploying to STAGING:"
-          echo "Cluster: $CLUSTER"
-          echo "Service: $SERVICE"
-
+      - name: Force new deployment in ECS (staging)
+        run: |
+          echo "Triggering ECS deployment for $ECS_CLUSTER / $ECS_SERVICE ..."
           aws ecs update-service \
-            --cluster "$CLUSTER" \
-            --service "$SERVICE" \
-            --force-new-deployment
+            --cluster $ECS_CLUSTER \
+            --service $ECS_SERVICE \
+            --force-new-deployment \
+            --region $AWS_REGION
 
-  # --------------------------
-  # 4) Deploy to PROD (main)
-  # --------------------------
-  deploy_prod:
-    needs: lint_test
+      - name: Wait for ECS service to stabilize (staging)
+        run: |
+          aws ecs wait services-stable \
+            --cluster $ECS_CLUSTER \
+            --services $ECS_SERVICE \
+            --region $AWS_REGION
+          echo "STAGING deployment complete."
+
+  # ------------------------------
+  # 4) Build & Deploy to PROD (main branch)
+  #    - runs only on main
+  #    - depends on STAGING job
+  # ------------------------------
+  build_deploy_prod:
     runs-on: ubuntu-latest
+    needs: build_deploy_staging
     if: github.ref == 'refs/heads/main'
     environment:
       name: prod
